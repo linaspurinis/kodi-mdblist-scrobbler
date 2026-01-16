@@ -1,5 +1,3 @@
-import json
-
 import requests
 import xbmc
 import xbmcaddon
@@ -56,7 +54,7 @@ class PlayerMonitor(xbmc.Player):
                 current_time = int(current_time)
 
         if total_time and current_time is not None:
-            progress_percent = (current_time / total_time) * 100
+            progress_percent = round((current_time / total_time) * 100, 2)
         else:
             return None
 
@@ -117,14 +115,16 @@ class PlayerMonitor(xbmc.Player):
 
         url = "{}{}?apikey={}".format(base_url, endpoint, apikey)
 
-        xbmc.log("Sending data to URL {}: {}".format(url, json.dumps(json_data)), level=xbmc.LOGINFO)
-
         try:
             response = requests.post(url, json=json_data)
+            if response.status_code >= 400:
+                self.show_message("API Error {}: {}".format(response.status_code, response.text[:50]))
             response.raise_for_status()
+        except requests.exceptions.HTTPError:
+            pass  # Already logged above
         except Exception as exception:
-            xbmc.log("Request failed for URL {}: {}".format(url, str(exception)), level=xbmc.LOGERROR)
-            self.show_message("HTTP request failed for {}".format(url))
+            xbmc.log("MDBList Scrobbler: Request failed - {}".format(str(exception)), level=xbmc.LOGERROR)
+            self.show_message("Request failed: {}".format(str(exception)[:50]))
 
     def event_to_endpoint(self, event: str):
         if event in ["start", "resume", "seek", "interval"]:
@@ -158,11 +158,13 @@ class PlayerMonitor(xbmc.Player):
         self.interval_timer.stop()
 
     def update_time(self):
-        self.total_time = self.getTotalTime() if self.isPlaying() else None
-        self.current_time = self.getTime() if self.isPlaying() else None
+        if self.isPlaying():
+            self.total_time = self.getTotalTime()
+            self.current_time = self.getTime()
 
     def onAVStarted(self):
         self.fetch_video_info()
+        self.update_time()
 
         self.send_request("start")
         self.start_interval_timer()
@@ -171,6 +173,7 @@ class PlayerMonitor(xbmc.Player):
         if not self.video_info:
             return
 
+        self.update_time()
         self.send_request("pause")
         self.stop_interval_timer()
 
