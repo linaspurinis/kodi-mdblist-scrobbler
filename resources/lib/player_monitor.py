@@ -4,8 +4,6 @@ import requests
 import xbmc
 import xbmcaddon
 
-from requests.auth import HTTPBasicAuth
-
 from resources.lib.timer import Timer
 from resources.lib.utils import jsonrpc_request, fix_unique_ids
 
@@ -25,7 +23,7 @@ class PlayerMonitor(xbmc.Player):
         self.load_settings()
 
     def show_message(self, message: str):
-        jsonrpc_request("GUI.ShowNotification", {"title": "HTTP Scrobbler", "message": message})
+        jsonrpc_request("GUI.ShowNotification", {"title": "MDBList Scrobbler", "message": message})
 
     def load_settings(self):
         self.settings = xbmcaddon.Addon().getSettings()
@@ -60,38 +58,35 @@ class PlayerMonitor(xbmc.Player):
         if total_time and current_time is not None:
             progress_percent = (current_time / total_time) * 100
         else:
-            progress_percent = None
-
-        full_data = {
-            "event": event,
-            "dbId": self.video_info.get("id"),
-            "title": self.video_info.get("label"),
-            "mediaType": media_type,
-            "year": self.video_info.get("year"),
-            "uniqueIds": fix_unique_ids(self.video_info.get("uniqueid", {}), media_type),
-            "duration": total_time,
-            "progress": {
-                "time": current_time,
-                "percent": progress_percent
-            }
-        }
+            return None
 
         if media_type == "episode":
-            full_data = {
-                **full_data,
-                "tvShowTitle": self.video_info.get("showtitle"),
-                "season": self.video_info.get("season"),
-                "episode": self.video_info.get("episode"),
-                "firstAired": self.video_info.get("firstaired"),
-                "uniqueIds": fix_unique_ids(self.video_info.get("tvshow", {}).get("uniqueid", {}), media_type)
-            }
-        elif full_data["mediaType"] == "movie":
-            full_data = {
-                **full_data,
-                "premiered": self.video_info.get("premiered")
+            show_ids = fix_unique_ids(self.video_info.get("tvshow", {}).get("uniqueid", {}), media_type)
+            return {
+                "show": {
+                    "ids": show_ids,
+                    "season": {
+                        "number": self.video_info.get("season"),
+                        "episode": {
+                            "number": self.video_info.get("episode")
+                        }
+                    }
+                },
+                "progress": progress_percent,
+                "app_version": xbmcaddon.Addon().getAddonInfo("version")
             }
 
-        return full_data
+        if media_type == "movie":
+            movie_ids = fix_unique_ids(self.video_info.get("uniqueid", {}), media_type)
+            return {
+                "movie": {
+                    "ids": movie_ids
+                },
+                "progress": progress_percent,
+                "app_version": xbmcaddon.Addon().getAddonInfo("version")
+            }
+
+        return None
 
     def send_request(self, event: str):
         if not self.settings.getBool("event.{}".format(event)):
@@ -101,28 +96,44 @@ class PlayerMonitor(xbmc.Player):
         if not json_data:
             return
 
-        url = self.settings.getString("url")
-        if not url:
-            xbmc.log("HTTP Scrobbler URL not configured!", level=xbmc.LOGERROR)
-            self.show_message("HTTP Scrobbler URL not configured!")
+        base_url = self.settings.getString("url")
+        if not base_url:
+            xbmc.log("MDBList API URL not configured!", level=xbmc.LOGERROR)
+            self.show_message("MDBList API URL not configured!")
             return
 
-        username = self.settings.getString("username")
-        password = self.settings.getString("password")
+        apikey = self.settings.getString("apikey")
+        if not apikey:
+            xbmc.log("MDBList API key not configured!", level=xbmc.LOGERROR)
+            self.show_message("MDBList API key not configured!")
+            return
 
-        if username or password:
-            auth = HTTPBasicAuth(username, password)
-        else:
-            auth = None
+        endpoint = self.event_to_endpoint(event)
+        if not endpoint:
+            return
+
+        if base_url.endswith("/"):
+            base_url = base_url[:-1]
+
+        url = "{}{}?apikey={}".format(base_url, endpoint, apikey)
 
         xbmc.log("Sending data to URL {}: {}".format(url, json.dumps(json_data)), level=xbmc.LOGINFO)
 
         try:
-            response = requests.post(url, json=json_data, auth=auth)
+            response = requests.post(url, json=json_data)
             response.raise_for_status()
         except Exception as exception:
             xbmc.log("Request failed for URL {}: {}".format(url, str(exception)), level=xbmc.LOGERROR)
             self.show_message("HTTP request failed for {}".format(url))
+
+    def event_to_endpoint(self, event: str):
+        if event in ["start", "resume", "seek", "interval"]:
+            return "/scrobble/start"
+        if event == "pause":
+            return "/scrobble/pause"
+        if event in ["stop", "end"]:
+            return "/scrobble/stop"
+        return None
 
     def fetch_video_info(self):
         try:

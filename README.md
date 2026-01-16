@@ -1,34 +1,32 @@
-# HTTP Scrobbler for Kodi
+# MDBList Scrobbler for Kodi
 
-This addon for Kodi provides a simple scrobbler sending requests for movies and episodes to any HTTP endpoint. The data is sent as JSON using a POST request.
-
-Work on a [backend for this addon](https://github.com/Programie/Tracky) is currently in progress.
+This addon for Kodi sends scrobble events for movies and episodes to the MDBList API using JSON POST requests.
 
 ## Installation
 
-Just [download this repository](https://github.com/Programie/KodiAddon-HttpScrobbler/archive/refs/heads/main.zip) as zip archive and install it in Kodi using "Install from zip file" in the add-on browser (Settings > Addons). NOTE requires "Enable Unknown Sources" to be enabled first.
+Download this repository as a zip archive and install it in Kodi using "Install from zip file" in the add-on browser (Settings > Addons). NOTE requires "Enable Unknown Sources" to be enabled first.
 
-After that, configure the backend, username and password in the Addon settings.
+After that, configure the MDBList API URL and API key in the addon settings.
 
-## Data sent to the endpoint
+## Scrobble requests
 
-The addon sends a HTTP POST request containing a JSON payload.
+The addon sends HTTP POST requests containing a JSON payload.
 
 A request is sent once the playback starts, pauses, resumes or stops.
 
 Additionally to that, it's also possible to regularly send the current progress while playing movies or episodes (i.e. not paused). This feature can be configured on the "Interval" page in the addon settings.
 
-Available values for the `event` property:
+Events are mapped to MDBList endpoints as follows:
 
-| Event    | Description                                             |
-|----------|---------------------------------------------------------|
-| start    | Start playback                                          |
-| pause    | Pause playback                                          |
-| resume   | Resume playback after pausing it                        |
-| stop     | Playback stopped (not finished)                         |
-| end      | Playback finished (not stopped before reaching the end) |
-| seek     | Triggered after jumping to a specific time or chapter   |
-| interval | Triggered while playback in configured interval         |
+| Event    | MDBList endpoint  |
+|----------|-------------------|
+| start    | /scrobble/start   |
+| pause    | /scrobble/pause   |
+| resume   | /scrobble/start   |
+| stop     | /scrobble/stop    |
+| end      | /scrobble/stop    |
+| seek     | /scrobble/start   |
+| interval | /scrobble/start   |
 
 Each event can be enabled or disabled individually in the addon settings.
 
@@ -36,39 +34,22 @@ Each event can be enabled or disabled individually in the addon settings.
 
 The `progress` property is especially useful in combination with the `interval` event as it contains the current playback progress. But the progress is also included in other events like `pause`, `seek` or `stop`.
 
-There are two properties in the `progress` map:
+Progress is sent as a percentage (0-100) in the `progress` field.
 
-- `time`: Contains the current playback position in seconds
-- `percent`: Contains the current playback progress in percent
+### Payload structure
 
-Additional to that, the `duration` property in the root contains the total runtime in seconds of the played back media.
-
-**Note:** As the current time as well as the total time are not available anymore in the `stop` as well as in the `end` event, the last known values are used instead. Those values are updated regularly (based on the interval also used for the `interval` event).
-
-### Data structure
-
-The following examples provide the usual structure which will be used for sending the data to the endpoint.
-
-Not all of those properties might be set in every request as they might not be available for the media content being played back.
+The following examples provide the usual structure which will be used for sending the data to MDBList.
 
 **Movies**
 
 ```json
 {
-  "event": "start",
-  "dbId": 123,
-  "title": "Back to the Future",
-  "mediaType": "movie",
-  "year": 1985,
-  "premiered": "",
-  "uniqueIds": {
+  "movie": {
+    "ids": {
     "imdb": "tt0088763"
+    }
   },
-  "duration": 6960,
-  "progress": {
-    "time": 0,
-    "percent": 0.0
-  }
+  "progress": 0.0
 }
 ```
 
@@ -76,22 +57,17 @@ Not all of those properties might be set in every request as they might not be a
 
 ```json
 {
-  "event": "start",
-  "dbId": 1234,
-  "title": "Member Berries",
-  "mediaType": "episode",
-  "year": 2016,
-  "uniqueIds": {
-    "tvdb": "75897"
+  "show": {
+    "ids": {
+      "tvdb": "75897"
+    },
+    "season": {
+      "number": 20,
+      "episode": {
+        "number": 1
+      }
+    }
   },
-  "duration": 1330,
-  "progress": {
-    "time": 0,
-    "percent": 0.0
-  },
-  "tvShowTitle": "South Park",
-  "season": 20,
-  "episode": 1,
-  "firstAired": "2016-09-14"
+  "progress": 0.0
 }
 ```
