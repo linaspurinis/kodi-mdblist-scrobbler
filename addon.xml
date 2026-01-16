@@ -9,5 +9,8 @@
         <platform>all</platform>
         <summary lang="en">MDBList Scrobbler</summary>
         <description lang="en">Track watched TV shows and movies with MDBList scrobble endpoints</description>
+        <assets>
+            <icon>icon.png</icon>
+        </assets>
     </extension>
 </addon>
