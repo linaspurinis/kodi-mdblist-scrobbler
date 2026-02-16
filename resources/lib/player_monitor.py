@@ -6,6 +6,9 @@ from resources.lib.timer import Timer
 from resources.lib.utils import jsonrpc_request, fix_unique_ids
 
 
+REQUEST_TIMEOUT_SECONDS = 10
+
+
 class PlayerMonitor(xbmc.Player):
     def __init__(self):
         super().__init__()
@@ -56,10 +59,20 @@ class PlayerMonitor(xbmc.Player):
         if total_time and current_time is not None:
             progress_percent = round((current_time / total_time) * 100, 2)
         else:
+            xbmc.log(
+                "MDBList Scrobbler: Skipping {} event due to missing/invalid playback time (total={}, current={})".format(
+                    event, total_time, current_time
+                ),
+                level=xbmc.LOGDEBUG,
+            )
             return None
 
         if media_type == "episode":
             show_ids = fix_unique_ids(self.video_info.get("tvshow", {}).get("uniqueid", {}), media_type)
+            if not show_ids:
+                xbmc.log("MDBList Scrobbler: Skipping episode scrobble, no supported show IDs found", level=xbmc.LOGWARNING)
+                return None
+
             return {
                 "show": {
                     "ids": show_ids,
@@ -76,6 +89,10 @@ class PlayerMonitor(xbmc.Player):
 
         if media_type == "movie":
             movie_ids = fix_unique_ids(self.video_info.get("uniqueid", {}), media_type)
+            if not movie_ids:
+                xbmc.log("MDBList Scrobbler: Skipping movie scrobble, no supported movie IDs found", level=xbmc.LOGWARNING)
+                return None
+
             return {
                 "movie": {
                     "ids": movie_ids
@@ -116,14 +133,24 @@ class PlayerMonitor(xbmc.Player):
         url = "{}{}?apikey={}".format(base_url, endpoint, apikey)
 
         try:
-            response = requests.post(url, json=json_data)
+            response = requests.post(url, json=json_data, timeout=REQUEST_TIMEOUT_SECONDS)
             if response.status_code >= 400:
+                response_snippet = response.text[:200]
+                xbmc.log(
+                    "MDBList Scrobbler: API error {} on {} payload={} response={}".format(
+                        response.status_code, endpoint, json_data, response_snippet
+                    ),
+                    level=xbmc.LOGERROR,
+                )
                 self.show_message("API Error {}: {}".format(response.status_code, response.text[:50]))
             response.raise_for_status()
         except requests.exceptions.HTTPError:
             pass  # Already logged above
-        except Exception as exception:
+        except requests.exceptions.RequestException as exception:
             xbmc.log("MDBList Scrobbler: Request failed - {}".format(str(exception)), level=xbmc.LOGERROR)
+            self.show_message("Request failed: {}".format(str(exception)[:50]))
+        except Exception as exception:
+            xbmc.log("MDBList Scrobbler: Unexpected failure - {}".format(str(exception)), level=xbmc.LOGERROR)
             self.show_message("Request failed: {}".format(str(exception)[:50]))
 
     def event_to_endpoint(self, event: str):
