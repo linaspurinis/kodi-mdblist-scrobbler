@@ -1,6 +1,7 @@
 import requests
 import xbmc
 import xbmcaddon
+import xbmcgui
 
 from resources.lib.timer import Timer
 from resources.lib.utils import jsonrpc_request, fix_unique_ids
@@ -20,6 +21,7 @@ class PlayerMonitor(xbmc.Player):
         self.current_time = None
 
         self.video_info = {}
+        self.rating_prompt_shown = False
 
         self.load_settings()
 
@@ -164,7 +166,26 @@ class PlayerMonitor(xbmc.Player):
 
     def fetch_video_info(self):
         try:
-            self.video_info = jsonrpc_request("Player.GetItem", {"playerid": 1, "properties": ["tvshowid", "showtitle", "season", "episode", "firstaired", "premiered", "year", "uniqueid"]}).get("item")
+            self.video_info = jsonrpc_request(
+                "Player.GetItem",
+                {
+                    "playerid": 1,
+                    "properties": [
+                        "title",
+                        "tvshowid",
+                        "showtitle",
+                        "season",
+                        "episode",
+                        "firstaired",
+                        "premiered",
+                        "year",
+                        "uniqueid",
+                        "movieid",
+                        "episodeid",
+                        "userrating",
+                    ],
+                },
+            ).get("item")
         except:
             self.video_info = None
 
@@ -189,7 +210,104 @@ class PlayerMonitor(xbmc.Player):
             self.total_time = self.getTotalTime()
             self.current_time = self.getTime()
 
+    def reset_playback_state(self):
+        self.total_time = None
+        self.current_time = None
+        self.video_info = {}
+        self.rating_prompt_shown = False
+
+    def get_progress_percent(self):
+        if not self.total_time or self.current_time is None:
+            return None
+
+        if self.total_time <= 0:
+            return None
+
+        current_time = min(max(int(self.current_time), 0), int(self.total_time))
+
+        return round((current_time / int(self.total_time)) * 100, 2)
+
+    def should_prompt_for_rating(self, playback_event: str):
+        if self.rating_prompt_shown or not self.video_info:
+            return False
+
+        if not self.settings.getBool("rating.prompt.enabled"):
+            return False
+
+        if playback_event == "end":
+            if not self.settings.getBool("rating.prompt.on_end"):
+                return False
+        elif playback_event == "stop":
+            if not self.settings.getBool("rating.prompt.on_stop"):
+                return False
+        else:
+            return False
+
+        media_type = self.video_info.get("type")
+        if media_type == "movie":
+            if not self.settings.getBool("rating.prompt.movie"):
+                return False
+            library_id = self.video_info.get("movieid")
+        elif media_type == "episode":
+            if not self.settings.getBool("rating.prompt.episode"):
+                return False
+            library_id = self.video_info.get("episodeid")
+        else:
+            return False
+
+        if library_id in (None, -1):
+            xbmc.log("MDBList Scrobbler: Skipping rating prompt, item is not in Kodi library", level=xbmc.LOGDEBUG)
+            return False
+
+        if self.settings.getBool("rating.prompt.unrated_only") and int(self.video_info.get("userrating", 0) or 0) > 0:
+            return False
+
+        progress_percent = self.get_progress_percent()
+        if progress_percent is None:
+            progress_percent = 100.0
+
+        return progress_percent >= float(self.settings.getInt("rating.prompt.progress"))
+
+    def save_kodi_rating(self, rating: int):
+        media_type = self.video_info.get("type")
+
+        if media_type == "movie":
+            method = "VideoLibrary.SetMovieDetails"
+            params = {"movieid": self.video_info.get("movieid"), "userrating": rating}
+        elif media_type == "episode":
+            method = "VideoLibrary.SetEpisodeDetails"
+            params = {"episodeid": self.video_info.get("episodeid"), "userrating": rating}
+        else:
+            return False
+
+        try:
+            jsonrpc_request(method, params)
+            self.video_info["userrating"] = rating
+            return True
+        except Exception as exception:
+            xbmc.log("MDBList Scrobbler: Failed to save Kodi rating - {}".format(str(exception)), level=xbmc.LOGERROR)
+            self.show_message("Failed to save rating")
+            return False
+
+    def prompt_for_rating(self, playback_event: str):
+        if not self.should_prompt_for_rating(playback_event):
+            return
+
+        heading = "Rate {}".format(self.video_info.get("title") or self.video_info.get("showtitle") or "item")
+        choices = ["Skip"] + ["{}".format(value) for value in range(1, 11)]
+        selection = xbmcgui.Dialog().select(heading, choices)
+
+        self.rating_prompt_shown = True
+
+        if selection <= 0:
+            return
+
+        rating = selection
+        if self.save_kodi_rating(rating):
+            self.show_message("Saved Kodi rating: {}/10".format(rating))
+
     def onAVStarted(self):
+        self.reset_playback_state()
         self.fetch_video_info()
         self.update_time()
 
@@ -215,15 +333,21 @@ class PlayerMonitor(xbmc.Player):
         if not self.video_info:
             return
 
+        self.update_time()
         self.send_request("stop")
         self.stop_interval_timer()
+        self.prompt_for_rating("stop")
+        self.video_info = {}
 
     def onPlayBackEnded(self):
         if not self.video_info:
             return
 
+        self.update_time()
         self.send_request("end")
         self.stop_interval_timer()
+        self.prompt_for_rating("end")
+        self.video_info = {}
 
     def onPlayBackSeek(self, time: int, seekOffset: int):
         if not self.video_info:
