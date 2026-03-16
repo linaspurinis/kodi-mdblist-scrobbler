@@ -180,13 +180,12 @@ class PlayerMonitor(xbmc.Player):
                         "premiered",
                         "year",
                         "uniqueid",
-                        "movieid",
-                        "episodeid",
                         "userrating",
                     ],
                 },
             ).get("item")
-        except:
+        except Exception as e:
+            xbmc.log("MDBList Scrobbler: fetch_video_info failed - {}".format(e), level=xbmc.LOGERROR)
             self.video_info = None
 
         if not self.video_info:
@@ -247,11 +246,11 @@ class PlayerMonitor(xbmc.Player):
         if media_type == "movie":
             if not self.settings.getBool("rating.prompt.movie"):
                 return False
-            library_id = self.video_info.get("movieid")
+            library_id = self.video_info.get("id")
         elif media_type == "episode":
             if not self.settings.getBool("rating.prompt.episode"):
                 return False
-            library_id = self.video_info.get("episodeid")
+            library_id = self.video_info.get("id")
         else:
             return False
 
@@ -273,10 +272,10 @@ class PlayerMonitor(xbmc.Player):
 
         if media_type == "movie":
             method = "VideoLibrary.SetMovieDetails"
-            params = {"movieid": self.video_info.get("movieid"), "userrating": rating}
+            params = {"movieid": self.video_info.get("id"), "userrating": rating}
         elif media_type == "episode":
             method = "VideoLibrary.SetEpisodeDetails"
-            params = {"episodeid": self.video_info.get("episodeid"), "userrating": rating}
+            params = {"episodeid": self.video_info.get("id"), "userrating": rating}
         else:
             return False
 
@@ -307,6 +306,7 @@ class PlayerMonitor(xbmc.Player):
             self.show_message("Saved Kodi rating: {}/10".format(rating))
 
     def onAVStarted(self):
+        self.load_settings()
         self.reset_playback_state()
         self.fetch_video_info()
         self.update_time()
