@@ -268,6 +268,9 @@ class PlayerMonitor(xbmc.Player):
         return progress_percent >= float(self.settings.getInt("rating.prompt.progress"))
 
     def save_kodi_rating(self, rating: int):
+        if not self.settings.getBool("rating.save.kodi"):
+            return False
+
         media_type = self.video_info.get("type")
 
         if media_type == "movie":
@@ -285,7 +288,58 @@ class PlayerMonitor(xbmc.Player):
             return True
         except Exception as exception:
             xbmc.log("MDBList Scrobbler: Failed to save Kodi rating - {}".format(str(exception)), level=xbmc.LOGERROR)
-            self.show_message("Failed to save rating")
+            return False
+
+    def save_mdblist_rating(self, rating: int):
+        if not self.settings.getBool("rating.save.mdblist"):
+            return False
+
+        media_type = self.video_info.get("type")
+
+        if media_type == "movie":
+            movie_ids = fix_unique_ids(self.video_info.get("uniqueid", {}), "movie")
+            if not movie_ids:
+                xbmc.log("MDBList Scrobbler: Cannot rate movie on MDBList, no supported IDs", level=xbmc.LOGWARNING)
+                return False
+            payload = {"movies": [{"ids": movie_ids, "rating": rating}]}
+        elif media_type == "episode":
+            show_ids = fix_unique_ids(self.video_info.get("tvshow", {}).get("uniqueid", {}), "episode")
+            if not show_ids:
+                xbmc.log("MDBList Scrobbler: Cannot rate episode on MDBList, no supported show IDs", level=xbmc.LOGWARNING)
+                return False
+            payload = {
+                "shows": [{
+                    "ids": show_ids,
+                    "seasons": [{
+                        "number": self.video_info.get("season"),
+                        "episodes": [{"number": self.video_info.get("episode"), "rating": rating}]
+                    }]
+                }]
+            }
+        else:
+            return False
+
+        base_url = self.settings.getString("url")
+        apikey = self.settings.getString("apikey")
+
+        if not base_url or not apikey:
+            xbmc.log("MDBList Scrobbler: Cannot rate on MDBList, URL or API key not configured", level=xbmc.LOGERROR)
+            return False
+
+        if base_url.endswith("/"):
+            base_url = base_url[:-1]
+
+        url = "{}/sync/ratings?apikey={}".format(base_url, apikey)
+
+        try:
+            response = requests.post(url, json=payload, timeout=REQUEST_TIMEOUT_SECONDS)
+            if response.status_code >= 400:
+                xbmc.log("MDBList Scrobbler: MDBList rating error {} response={}".format(
+                    response.status_code, response.text[:200]), level=xbmc.LOGERROR)
+                return False
+            return True
+        except requests.exceptions.RequestException as exception:
+            xbmc.log("MDBList Scrobbler: MDBList rating request failed - {}".format(str(exception)), level=xbmc.LOGERROR)
             return False
 
     def prompt_for_rating(self, playback_event: str):
@@ -302,8 +356,13 @@ class PlayerMonitor(xbmc.Player):
             return
 
         rating = selection
+        saved = []
         if self.save_kodi_rating(rating):
-            self.show_message("Saved Kodi rating: {}/10".format(rating))
+            saved.append("Kodi")
+        if self.save_mdblist_rating(rating):
+            saved.append("MDBList")
+        if saved:
+            self.show_message("Saved {}/10 to {}".format(rating, " & ".join(saved)))
 
     def onAVStarted(self):
         self.load_settings()
