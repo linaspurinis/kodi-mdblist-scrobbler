@@ -39,8 +39,10 @@ class PlayerMonitor(xbmc.Player):
 
         try:
             if not self.settings.getBool("mediatype.{}".format(media_type)):
+                xbmc.log("MDBList Scrobbler: Scrobbling disabled for media type '{}'".format(media_type), level=xbmc.LOGDEBUG)
                 return None
         except TypeError:
+            xbmc.log("MDBList Scrobbler: Unrecognised media type '{}', skipping".format(media_type), level=xbmc.LOGDEBUG)
             return None
 
         total_time = self.getTotalTime() if self.isPlaying() else self.total_time
@@ -107,6 +109,7 @@ class PlayerMonitor(xbmc.Player):
 
     def send_request(self, event: str):
         if not self.settings.getBool("event.{}".format(event)):
+            xbmc.log("MDBList Scrobbler: Event '{}' disabled in settings, skipping".format(event), level=xbmc.LOGDEBUG)
             return
 
         json_data = self.build_payload(event)
@@ -145,6 +148,8 @@ class PlayerMonitor(xbmc.Player):
                     level=xbmc.LOGERROR,
                 )
                 self.show_message("API Error {}: {}".format(response.status_code, response.text[:50]))
+            else:
+                xbmc.log("MDBList Scrobbler: Scrobbled '{}' to {} ({})".format(event, endpoint, response.status_code), level=xbmc.LOGDEBUG)
             response.raise_for_status()
         except requests.exceptions.HTTPError:
             pass  # Already logged above
@@ -180,7 +185,6 @@ class PlayerMonitor(xbmc.Player):
                         "premiered",
                         "year",
                         "uniqueid",
-                        "userrating",
                     ],
                 },
             ).get("item")
@@ -189,10 +193,28 @@ class PlayerMonitor(xbmc.Player):
             self.video_info = None
 
         if not self.video_info:
+            xbmc.log("MDBList Scrobbler: No video info available, scrobbling disabled for this item", level=xbmc.LOGDEBUG)
             return
 
-        if self.video_info.get("type") == "episode":
-            self.video_info["tvshow"] = jsonrpc_request("VideoLibrary.GetTVShowDetails", {"tvshowid": self.video_info.get("tvshowid"), "properties": ["uniqueid"]}).get("tvshowdetails")
+        media_type = self.video_info.get("type")
+        item_id = self.video_info.get("id")
+        uniqueid = self.video_info.get("uniqueid", {})
+        xbmc.log(
+            "MDBList Scrobbler: Detected item type={} id={} uniqueid={} title={}".format(
+                media_type, item_id, uniqueid,
+                self.video_info.get("title") or self.video_info.get("showtitle")
+            ),
+            level=xbmc.LOGDEBUG,
+        )
+
+        if media_type == "episode":
+            try:
+                tvshow = jsonrpc_request("VideoLibrary.GetTVShowDetails", {"tvshowid": self.video_info.get("tvshowid"), "properties": ["uniqueid"]}).get("tvshowdetails")
+                self.video_info["tvshow"] = tvshow or {}
+                xbmc.log("MDBList Scrobbler: tvshow uniqueid={}".format(self.video_info["tvshow"].get("uniqueid", {})), level=xbmc.LOGDEBUG)
+            except Exception as e:
+                xbmc.log("MDBList Scrobbler: Failed to fetch tvshow details - {}".format(e), level=xbmc.LOGWARNING)
+                self.video_info["tvshow"] = {}
 
     def start_interval_timer(self):
         self.interval_timer = Timer(self.settings.getInt("interval"), self.onInterval)
@@ -258,8 +280,19 @@ class PlayerMonitor(xbmc.Player):
             xbmc.log("MDBList Scrobbler: Skipping rating prompt, item is not in Kodi library", level=xbmc.LOGDEBUG)
             return False
 
-        if self.settings.getBool("rating.prompt.unrated_only") and int(self.video_info.get("userrating", 0) or 0) > 0:
-            return False
+        if self.settings.getBool("rating.prompt.unrated_only"):
+            media_type = self.video_info.get("type")
+            try:
+                if media_type == "movie":
+                    details = jsonrpc_request("VideoLibrary.GetMovieDetails", {"movieid": library_id, "properties": ["userrating"]}).get("moviedetails", {})
+                elif media_type == "episode":
+                    details = jsonrpc_request("VideoLibrary.GetEpisodeDetails", {"episodeid": library_id, "properties": ["userrating"]}).get("episodedetails", {})
+                else:
+                    details = {}
+                if int(details.get("userrating", 0) or 0) > 0:
+                    return False
+            except Exception as e:
+                xbmc.log("MDBList Scrobbler: Failed to fetch userrating - {}".format(e), level=xbmc.LOGWARNING)
 
         progress_percent = self.get_progress_percent()
         if progress_percent is None:
@@ -365,6 +398,7 @@ class PlayerMonitor(xbmc.Player):
             self.show_message("Saved {}/10 to {}".format(rating, " & ".join(saved)))
 
     def onAVStarted(self):
+        xbmc.log("MDBList Scrobbler: onAVStarted", level=xbmc.LOGDEBUG)
         self.load_settings()
         self.reset_playback_state()
         self.fetch_video_info()
@@ -389,6 +423,7 @@ class PlayerMonitor(xbmc.Player):
         self.start_interval_timer()
 
     def onPlayBackStopped(self):
+        xbmc.log("MDBList Scrobbler: onPlayBackStopped (video_info present={})".format(bool(self.video_info)), level=xbmc.LOGDEBUG)
         if not self.video_info:
             return
 
@@ -399,6 +434,7 @@ class PlayerMonitor(xbmc.Player):
         self.video_info = {}
 
     def onPlayBackEnded(self):
+        xbmc.log("MDBList Scrobbler: onPlayBackEnded (video_info present={})".format(bool(self.video_info)), level=xbmc.LOGDEBUG)
         if not self.video_info:
             return
 
