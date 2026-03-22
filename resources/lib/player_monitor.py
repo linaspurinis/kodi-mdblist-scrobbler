@@ -74,6 +74,8 @@ class PlayerMonitor(xbmc.Player):
         if media_type == "episode":
             show_ids = fix_unique_ids(self.video_info.get("tvshow", {}).get("uniqueid", {}), media_type)
             if not show_ids:
+                show_ids = fix_unique_ids(self.video_info.get("uniqueid", {}), media_type)
+            if not show_ids:
                 xbmc.log("MDBList Scrobbler: Skipping episode scrobble, no supported show IDs found", level=xbmc.LOGWARNING)
                 return None
 
@@ -208,12 +210,17 @@ class PlayerMonitor(xbmc.Player):
         )
 
         if media_type == "episode":
-            try:
-                tvshow = jsonrpc_request("VideoLibrary.GetTVShowDetails", {"tvshowid": self.video_info.get("tvshowid"), "properties": ["uniqueid"]}).get("tvshowdetails")
-                self.video_info["tvshow"] = tvshow or {}
-                xbmc.log("MDBList Scrobbler: tvshow uniqueid={}".format(self.video_info["tvshow"].get("uniqueid", {})), level=xbmc.LOGDEBUG)
-            except Exception as e:
-                xbmc.log("MDBList Scrobbler: Failed to fetch tvshow details - {}".format(e), level=xbmc.LOGWARNING)
+            tvshowid = self.video_info.get("tvshowid")
+            if tvshowid and tvshowid != -1:
+                try:
+                    tvshow = jsonrpc_request("VideoLibrary.GetTVShowDetails", {"tvshowid": tvshowid, "properties": ["uniqueid"]}).get("tvshowdetails")
+                    self.video_info["tvshow"] = tvshow or {}
+                    xbmc.log("MDBList Scrobbler: tvshow uniqueid={}".format(self.video_info["tvshow"].get("uniqueid", {})), level=xbmc.LOGDEBUG)
+                except Exception as e:
+                    xbmc.log("MDBList Scrobbler: Failed to fetch tvshow details - {}".format(e), level=xbmc.LOGWARNING)
+                    self.video_info["tvshow"] = {}
+            else:
+                xbmc.log("MDBList Scrobbler: tvshowid={}, skipping library lookup, will use episode uniqueid".format(tvshowid), level=xbmc.LOGDEBUG)
                 self.video_info["tvshow"] = {}
 
     def start_interval_timer(self):
@@ -277,8 +284,10 @@ class PlayerMonitor(xbmc.Player):
             return False
 
         if library_id in (None, -1):
-            xbmc.log("MDBList Scrobbler: Skipping rating prompt, item is not in Kodi library", level=xbmc.LOGDEBUG)
-            return False
+            if not self.settings.getBool("rating.save.mdblist"):
+                xbmc.log("MDBList Scrobbler: Skipping rating prompt, item is not in Kodi library and MDBList rating disabled", level=xbmc.LOGDEBUG)
+                return False
+            xbmc.log("MDBList Scrobbler: Item not in Kodi library, Kodi rating will be skipped but MDBList rating can proceed", level=xbmc.LOGDEBUG)
 
         if self.settings.getBool("rating.prompt.unrated_only"):
             media_type = self.video_info.get("type")
@@ -337,6 +346,8 @@ class PlayerMonitor(xbmc.Player):
             payload = {"movies": [{"ids": movie_ids, "rating": rating}]}
         elif media_type == "episode":
             show_ids = fix_unique_ids(self.video_info.get("tvshow", {}).get("uniqueid", {}), "episode")
+            if not show_ids:
+                show_ids = fix_unique_ids(self.video_info.get("uniqueid", {}), "episode")
             if not show_ids:
                 xbmc.log("MDBList Scrobbler: Cannot rate episode on MDBList, no supported show IDs", level=xbmc.LOGWARNING)
                 return False
