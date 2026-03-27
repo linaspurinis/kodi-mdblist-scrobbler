@@ -1,6 +1,6 @@
 # MDBList Scrobbler for Kodi
 
-This addon for Kodi sends scrobble events for movies and episodes to the MDBList API using JSON POST requests.
+This addon for Kodi sends scrobble events for movies and episodes to the MDBList API using JSON POST requests. It also supports prompting you to rate content after watching and saving those ratings to Kodi and/or MDBList.
 
 ## Installation
 
@@ -71,3 +71,73 @@ The following examples provide the usual structure which will be used for sendin
   "progress": 0.0
 }
 ```
+
+## Rating prompt
+
+After finishing or stopping playback, the addon can prompt you to rate the movie or episode on a scale of 1–10.
+
+### Configuration
+
+All rating options are available in the addon settings under the "Rating" section:
+
+| Setting | Description |
+|---------|-------------|
+| Enable rating prompt | Master toggle for the rating feature |
+| Prompt on playback end | Show prompt when playback finishes naturally |
+| Prompt on playback stop | Show prompt when playback is manually stopped |
+| Prompt for movies | Enable rating prompt for movies |
+| Prompt for episodes | Enable rating prompt for episodes |
+| Only prompt if unrated | Skip prompt if the item already has a user rating in Kodi |
+| Minimum progress (%) | Only prompt if playback reached this percentage (e.g. 80 to skip if you barely watched) |
+| Save rating to Kodi | Write the rating back to the Kodi library as a user rating |
+| Save rating to MDBList | Send the rating to MDBList via `/sync/ratings` |
+
+### How it works
+
+When playback ends or stops, a selection dialog appears with the title of the movie or episode and choices from 1 to 10 (plus Skip). Selecting a number saves the rating to the configured destinations and shows a confirmation notification. The prompt is shown at most once per playback session.
+
+Ratings are sent to MDBList using the following payload structure:
+
+**Movies**
+
+```json
+{
+  "movies": [
+    {
+      "ids": { "imdb": "tt0088763" },
+      "rating": 8
+    }
+  ]
+}
+```
+
+**Episodes**
+
+```json
+{
+  "shows": [
+    {
+      "ids": { "tvdb": "75897" },
+      "seasons": [
+        {
+          "number": 1,
+          "episodes": [
+            { "number": 3, "rating": 7 }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Supported IDs
+
+The addon resolves media identifiers using the following ID types:
+
+| Media type | Supported IDs |
+|------------|---------------|
+| Movies | imdb, tmdb, trakt, kitsu, mdblist |
+| Episodes | imdb, tmdb, trakt, tvdb, mdblist |
+
+Common Kodi aliases (e.g. `imdbnumber`, `themoviedb`, `tvdb_id`) are automatically mapped to their canonical forms.
