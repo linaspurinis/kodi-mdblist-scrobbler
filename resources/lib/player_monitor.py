@@ -3,6 +3,7 @@ import xbmc
 import xbmcaddon
 import xbmcgui
 
+from resources.lib import oauth
 from resources.lib.timer import Timer
 from resources.lib.utils import jsonrpc_request, fix_unique_ids
 
@@ -118,29 +119,31 @@ class PlayerMonitor(xbmc.Player):
         if not json_data:
             return
 
-        base_url = self.settings.getString("url")
-        if not base_url:
-            xbmc.log("MDBList API URL not configured!", level=xbmc.LOGERROR)
-            self.show_message("MDBList API URL not configured!")
+        access_token = oauth.ensure_valid_token()
+        apikey = self.settings.getString("apikey")
+
+        if not access_token and not apikey:
+            xbmc.log("MDBList Scrobbler: Not authenticated (no OAuth token or API key configured)", level=xbmc.LOGERROR)
+            self.show_message("Not authenticated. Open addon settings to connect.")
             return
 
-        apikey = self.settings.getString("apikey")
-        if not apikey:
-            xbmc.log("MDBList API key not configured!", level=xbmc.LOGERROR)
-            self.show_message("MDBList API key not configured!")
-            return
+        base_url = self.settings.getString("url") or "https://api.mdblist.com"
+        if base_url.endswith("/"):
+            base_url = base_url[:-1]
 
         endpoint = self.event_to_endpoint(event)
         if not endpoint:
             return
 
-        if base_url.endswith("/"):
-            base_url = base_url[:-1]
-
-        url = "{}{}?apikey={}".format(base_url, endpoint, apikey)
+        if access_token:
+            url = "{}{}".format(base_url, endpoint)
+            headers = {"Authorization": "Bearer {}".format(access_token)}
+        else:
+            url = "{}{}?apikey={}".format(base_url, endpoint, apikey)
+            headers = None
 
         try:
-            response = requests.post(url, json=json_data, timeout=REQUEST_TIMEOUT_SECONDS)
+            response = requests.post(url, json=json_data, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
             if response.status_code >= 400:
                 response_snippet = response.text[:200]
                 xbmc.log(
@@ -363,20 +366,26 @@ class PlayerMonitor(xbmc.Player):
         else:
             return False
 
-        base_url = self.settings.getString("url")
+        access_token = oauth.ensure_valid_token()
         apikey = self.settings.getString("apikey")
 
-        if not base_url or not apikey:
-            xbmc.log("MDBList Scrobbler: Cannot rate on MDBList, URL or API key not configured", level=xbmc.LOGERROR)
+        if not access_token and not apikey:
+            xbmc.log("MDBList Scrobbler: Cannot rate on MDBList, not authenticated", level=xbmc.LOGERROR)
             return False
 
+        base_url = self.settings.getString("url") or "https://api.mdblist.com"
         if base_url.endswith("/"):
             base_url = base_url[:-1]
 
-        url = "{}/sync/ratings?apikey={}".format(base_url, apikey)
+        if access_token:
+            url = "{}/sync/ratings".format(base_url)
+            headers = {"Authorization": "Bearer {}".format(access_token)}
+        else:
+            url = "{}/sync/ratings?apikey={}".format(base_url, apikey)
+            headers = None
 
         try:
-            response = requests.post(url, json=payload, timeout=REQUEST_TIMEOUT_SECONDS)
+            response = requests.post(url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
             if response.status_code >= 400:
                 xbmc.log("MDBList Scrobbler: MDBList rating error {} response={}".format(
                     response.status_code, response.text[:200]), level=xbmc.LOGERROR)

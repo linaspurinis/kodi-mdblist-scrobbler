@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <settings>
     <category label="General">
-        <setting label="MDBList API URL" type="text" id="url" default="https://api.mdblist.com"/>
-        <setting label="MDBList API Key" type="text" id="apikey" default=""/>
+        <setting label="MDBList Authentication" type="lsep"/>
+        <setting label="Status" id="oauth_status" type="text" default="Not connected" enable="false"/>
+        <setting label="Connect with MDBList (OAuth)" type="action" action="RunScript(service.mdblist-scrobbler,connect)"/>
+        <setting label="Disconnect from MDBList" type="action" action="RunScript(service.mdblist-scrobbler,disconnect)"/>
     </category>
     <category label="Scrobbling">
         <setting label="Scrobble at specific events" type="lsep"/>
@@ -20,7 +22,6 @@
         <setting label="Scrobble types" type="lsep"/>
         <setting label="Movies" type="bool" id="mediatype.movie" default="true"/>
         <setting label="Episodes (TV shows)" type="bool" id="mediatype.episode" default="true"/>
-
     </category>
     <category label="Rating">
         <setting label="Prompt for rating after playback" type="lsep"/>

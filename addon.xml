@@ -5,6 +5,7 @@
         <import addon="script.module.requests" version="2.22.0"/>
     </requires>
     <extension point="xbmc.service" library="service.py"/>
+    <extension point="xbmc.python.script" library="script.py"/>
     <extension point="xbmc.addon.metadata">
         <platform>all</platform>
         <summary lang="en">MDBList Scrobbler</summary>
