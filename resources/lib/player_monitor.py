@@ -32,6 +32,12 @@ class PlayerMonitor(xbmc.Player):
     def load_settings(self):
         self.settings = xbmcaddon.Addon().getSettings()
 
+    def get_string_setting(self, setting_id: str, default: str = ""):
+        try:
+            return self.settings.getString(setting_id) or default
+        except TypeError:
+            return default
+
     def build_payload(self, event: str):
         if not self.video_info:
             return None
@@ -120,14 +126,14 @@ class PlayerMonitor(xbmc.Player):
             return
 
         access_token = oauth.ensure_valid_token()
-        apikey = self.settings.getString("apikey")
+        apikey = "" if access_token else self.get_string_setting("apikey")
 
         if not access_token and not apikey:
             xbmc.log("MDBList Scrobbler: Not authenticated (no OAuth token or API key configured)", level=xbmc.LOGERROR)
             self.show_message("Not authenticated. Open addon settings to connect.")
             return
 
-        base_url = self.settings.getString("url") or "https://api.mdblist.com"
+        base_url = self.get_string_setting("url", "https://api.mdblist.com")
         if base_url.endswith("/"):
             base_url = base_url[:-1]
 
@@ -367,13 +373,13 @@ class PlayerMonitor(xbmc.Player):
             return False
 
         access_token = oauth.ensure_valid_token()
-        apikey = self.settings.getString("apikey")
+        apikey = "" if access_token else self.get_string_setting("apikey")
 
         if not access_token and not apikey:
             xbmc.log("MDBList Scrobbler: Cannot rate on MDBList, not authenticated", level=xbmc.LOGERROR)
             return False
 
-        base_url = self.settings.getString("url") or "https://api.mdblist.com"
+        base_url = self.get_string_setting("url", "https://api.mdblist.com")
         if base_url.endswith("/"):
             base_url = base_url[:-1]
 
