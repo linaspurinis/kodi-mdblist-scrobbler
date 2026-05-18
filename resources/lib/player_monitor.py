@@ -9,6 +9,7 @@ from resources.lib.utils import jsonrpc_request, fix_unique_ids
 
 
 REQUEST_TIMEOUT_SECONDS = 10
+DEFAULT_BASE_URL = "https://api.mdblist.com"
 
 
 class PlayerMonitor(xbmc.Player):
@@ -163,19 +164,15 @@ class PlayerMonitor(xbmc.Player):
             self.show_message("Not authenticated. Open addon settings to connect.")
             return
 
-        base_url = self.get_string_setting("url", "https://api.mdblist.com")
-        if base_url.endswith("/"):
-            base_url = base_url[:-1]
-
         endpoint = self.event_to_endpoint(event)
         if not endpoint:
             return
 
         if access_token:
-            url = "{}{}".format(base_url, endpoint)
+            url = "{}{}".format(DEFAULT_BASE_URL, endpoint)
             headers = {"Authorization": "Bearer {}".format(access_token)}
         else:
-            url = "{}{}?apikey={}".format(base_url, endpoint, apikey)
+            url = "{}{}?apikey={}".format(DEFAULT_BASE_URL, endpoint, apikey)
             headers = None
 
         try:
@@ -438,15 +435,11 @@ class PlayerMonitor(xbmc.Player):
             xbmc.log("MDBList Scrobbler: Cannot rate on MDBList, not authenticated", level=xbmc.LOGERROR)
             return False
 
-        base_url = self.get_string_setting("url", "https://api.mdblist.com")
-        if base_url.endswith("/"):
-            base_url = base_url[:-1]
-
         if access_token:
-            url = "{}/sync/ratings".format(base_url)
+            url = "{}/sync/ratings".format(DEFAULT_BASE_URL)
             headers = {"Authorization": "Bearer {}".format(access_token)}
         else:
-            url = "{}/sync/ratings?apikey={}".format(base_url, apikey)
+            url = "{}/sync/ratings?apikey={}".format(DEFAULT_BASE_URL, apikey)
             headers = None
 
         try:

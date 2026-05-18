@@ -21,6 +21,16 @@ ID_ALIASES = {
 }
 
 
+def _normalize_id_value(key: str, value):
+    if key in ("tmdb", "tvdb", "trakt", "kitsu") and isinstance(value, str):
+        cleaned = value.strip()
+        if cleaned.isdigit():
+            return int(cleaned)
+        return cleaned
+
+    return value
+
+
 def jsonrpc_request(method: str, params=None):
     request = {
         "jsonrpc": "2.0",
@@ -77,7 +87,7 @@ def fix_unique_ids(unique_ids: dict, media_type: str):
         if key == "unknown":
             continue
 
-        canonical[key] = raw_value
+        canonical[key] = _normalize_id_value(key, raw_value)
 
     # Backward-compatible fallback: map Kodi "unknown" id when no canonical ids exist.
     if not canonical and "unknown" in unique_ids:

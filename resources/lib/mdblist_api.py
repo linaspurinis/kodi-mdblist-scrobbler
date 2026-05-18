@@ -27,8 +27,7 @@ def get_string_setting(setting_id: str, default: str = ""):
 
 
 def base_url():
-    url = get_string_setting("url", DEFAULT_BASE_URL)
-    return url[:-1] if url.endswith("/") else url
+    return DEFAULT_BASE_URL
 
 
 def auth_params():
