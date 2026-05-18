@@ -5,6 +5,9 @@
         <setting label="Status" id="oauth_status" type="text" default="Not connected" enable="false"/>
         <setting label="Connect with MDBList (OAuth)" type="action" action="RunScript(service.mdblist-scrobbler,connect)"/>
         <setting label="Disconnect from MDBList" type="action" action="RunScript(service.mdblist-scrobbler,disconnect)"/>
+
+        <setting label="Watchlist" type="lsep"/>
+        <setting label="Enable MDBList watchlist" type="bool" id="watchlist.enabled" default="false"/>
     </category>
     <category label="Scrobbling">
         <setting label="Scrobble at specific events" type="lsep"/>

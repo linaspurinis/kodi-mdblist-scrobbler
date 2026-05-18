@@ -5,6 +5,7 @@ import xbmc
 
 SUPPORTED_IDS = {
     "movie": {"imdb", "tmdb", "trakt", "kitsu", "mdblist"},
+    "show": {"imdb", "tmdb", "trakt", "tvdb", "mdblist"},
     "episode": {"imdb", "tmdb", "trakt", "tvdb", "mdblist"},
 }
 
@@ -51,11 +52,11 @@ def _coerce_unknown_id(unique_id, media_type: str):
         if cleaned.startswith("tt"):
             return "imdb", cleaned
         if cleaned.isdigit():
-            return ("tvdb", cleaned) if media_type == "episode" else ("tmdb", cleaned)
+            return ("tvdb", cleaned) if media_type in ("episode", "show") else ("tmdb", cleaned)
         return None, None
 
     if isinstance(unique_id, int):
-        return ("tvdb", unique_id) if media_type == "episode" else ("tmdb", unique_id)
+        return ("tvdb", unique_id) if media_type in ("episode", "show") else ("tmdb", unique_id)
 
     return None, None
 
