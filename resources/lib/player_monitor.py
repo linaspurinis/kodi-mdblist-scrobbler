@@ -35,7 +35,37 @@ class PlayerMonitor(xbmc.Player):
     def get_string_setting(self, setting_id: str, default: str = ""):
         try:
             return self.settings.getString(setting_id) or default
-        except TypeError:
+        except Exception as exception:
+            xbmc.log(
+                "MDBList Scrobbler: String setting '{}' unavailable, using default - {}".format(
+                    setting_id, exception
+                ),
+                level=xbmc.LOGDEBUG,
+            )
+            return default
+
+    def get_bool_setting(self, setting_id: str, default: bool = False):
+        try:
+            return self.settings.getBool(setting_id)
+        except Exception as exception:
+            xbmc.log(
+                "MDBList Scrobbler: Boolean setting '{}' unavailable, using default={} - {}".format(
+                    setting_id, default, exception
+                ),
+                level=xbmc.LOGDEBUG,
+            )
+            return default
+
+    def get_int_setting(self, setting_id: str, default: int = 0):
+        try:
+            return self.settings.getInt(setting_id)
+        except Exception as exception:
+            xbmc.log(
+                "MDBList Scrobbler: Integer setting '{}' unavailable, using default={} - {}".format(
+                    setting_id, default, exception
+                ),
+                level=xbmc.LOGDEBUG,
+            )
             return default
 
     def build_payload(self, event: str):
@@ -44,12 +74,12 @@ class PlayerMonitor(xbmc.Player):
 
         media_type = self.video_info.get("type")
 
-        try:
-            if not self.settings.getBool("mediatype.{}".format(media_type)):
-                xbmc.log("MDBList Scrobbler: Scrobbling disabled for media type '{}'".format(media_type), level=xbmc.LOGDEBUG)
-                return None
-        except TypeError:
+        if media_type not in ("movie", "episode"):
             xbmc.log("MDBList Scrobbler: Unrecognised media type '{}', skipping".format(media_type), level=xbmc.LOGDEBUG)
+            return None
+
+        if not self.get_bool_setting("mediatype.{}".format(media_type), True):
+            xbmc.log("MDBList Scrobbler: Scrobbling disabled for media type '{}'".format(media_type), level=xbmc.LOGDEBUG)
             return None
 
         total_time = self.getTotalTime() if self.isPlaying() else self.total_time
@@ -117,7 +147,7 @@ class PlayerMonitor(xbmc.Player):
         return None
 
     def send_request(self, event: str):
-        if not self.settings.getBool("event.{}".format(event)):
+        if not self.get_bool_setting("event.{}".format(event), True):
             xbmc.log("MDBList Scrobbler: Event '{}' disabled in settings, skipping".format(event), level=xbmc.LOGDEBUG)
             return
 
@@ -180,6 +210,24 @@ class PlayerMonitor(xbmc.Player):
             return "/scrobble/stop"
         return None
 
+    def infer_media_type(self, item: dict):
+        media_type = item.get("type")
+        if media_type in ("movie", "episode"):
+            return media_type
+
+        season = item.get("season")
+        episode = item.get("episode")
+        if season not in (None, -1, "") or episode not in (None, -1, ""):
+            return "episode"
+
+        if item.get("showtitle") or item.get("firstaired") or item.get("tvshowid") not in (None, -1, ""):
+            return "episode"
+
+        if item.get("title") and (item.get("premiered") or item.get("year") or item.get("uniqueid")):
+            return "movie"
+
+        return media_type
+
     def fetch_video_info(self):
         try:
             self.video_info = jsonrpc_request(
@@ -208,6 +256,17 @@ class PlayerMonitor(xbmc.Player):
             return
 
         media_type = self.video_info.get("type")
+        inferred_media_type = self.infer_media_type(self.video_info)
+        if inferred_media_type != media_type:
+            xbmc.log(
+                "MDBList Scrobbler: Inferred item type '{}' from Kodi type '{}'".format(
+                    inferred_media_type, media_type
+                ),
+                level=xbmc.LOGDEBUG,
+            )
+            self.video_info["type"] = inferred_media_type
+            media_type = inferred_media_type
+
         item_id = self.video_info.get("id")
         uniqueid = self.video_info.get("uniqueid", {})
         xbmc.log(
@@ -233,7 +292,7 @@ class PlayerMonitor(xbmc.Player):
                 self.video_info["tvshow"] = {}
 
     def start_interval_timer(self):
-        self.interval_timer = Timer(self.settings.getInt("interval"), self.onInterval)
+        self.interval_timer = Timer(self.get_int_setting("interval", 10), self.onInterval)
         self.interval_timer.start()
 
     def stop_interval_timer(self):
@@ -268,37 +327,37 @@ class PlayerMonitor(xbmc.Player):
         if self.rating_prompt_shown or not self.video_info:
             return False
 
-        if not self.settings.getBool("rating.prompt.enabled"):
+        if not self.get_bool_setting("rating.prompt.enabled", False):
             return False
 
         if playback_event == "end":
-            if not self.settings.getBool("rating.prompt.on_end"):
+            if not self.get_bool_setting("rating.prompt.on_end", True):
                 return False
         elif playback_event == "stop":
-            if not self.settings.getBool("rating.prompt.on_stop"):
+            if not self.get_bool_setting("rating.prompt.on_stop", True):
                 return False
         else:
             return False
 
         media_type = self.video_info.get("type")
         if media_type == "movie":
-            if not self.settings.getBool("rating.prompt.movie"):
+            if not self.get_bool_setting("rating.prompt.movie", True):
                 return False
             library_id = self.video_info.get("id")
         elif media_type == "episode":
-            if not self.settings.getBool("rating.prompt.episode"):
+            if not self.get_bool_setting("rating.prompt.episode", True):
                 return False
             library_id = self.video_info.get("id")
         else:
             return False
 
         if library_id in (None, -1):
-            if not self.settings.getBool("rating.save.mdblist"):
+            if not self.get_bool_setting("rating.save.mdblist", False):
                 xbmc.log("MDBList Scrobbler: Skipping rating prompt, item is not in Kodi library and MDBList rating disabled", level=xbmc.LOGDEBUG)
                 return False
             xbmc.log("MDBList Scrobbler: Item not in Kodi library, Kodi rating will be skipped but MDBList rating can proceed", level=xbmc.LOGDEBUG)
 
-        if self.settings.getBool("rating.prompt.unrated_only"):
+        if self.get_bool_setting("rating.prompt.unrated_only", True):
             media_type = self.video_info.get("type")
             try:
                 if media_type == "movie":
@@ -316,10 +375,10 @@ class PlayerMonitor(xbmc.Player):
         if progress_percent is None:
             progress_percent = 100.0
 
-        return progress_percent >= float(self.settings.getInt("rating.prompt.progress"))
+        return progress_percent >= float(self.get_int_setting("rating.prompt.progress", 90))
 
     def save_kodi_rating(self, rating: int):
-        if not self.settings.getBool("rating.save.kodi"):
+        if not self.get_bool_setting("rating.save.kodi", True):
             return False
 
         media_type = self.video_info.get("type")
@@ -342,7 +401,7 @@ class PlayerMonitor(xbmc.Player):
             return False
 
     def save_mdblist_rating(self, rating: int):
-        if not self.settings.getBool("rating.save.mdblist"):
+        if not self.get_bool_setting("rating.save.mdblist", False):
             return False
 
         media_type = self.video_info.get("type")

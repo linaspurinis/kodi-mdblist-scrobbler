@@ -22,7 +22,7 @@ def get_string_setting(setting_id: str, default: str = ""):
     try:
         value = _addon().getSettings().getString(setting_id)
         return value or default
-    except TypeError:
+    except Exception:
         return default
 
 
