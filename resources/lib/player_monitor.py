@@ -1,4 +1,5 @@
 import time
+import urllib.parse
 
 import requests
 import xbmc
@@ -81,7 +82,12 @@ class PlayerMonitor(xbmc.Player):
         media_type = self.video_info.get("type")
 
         if media_type not in ("movie", "episode"):
-            xbmc.log("MDBList Scrobbler: Unrecognised media type '{}', skipping".format(media_type), level=xbmc.LOGDEBUG)
+            xbmc.log(
+                "MDBList Scrobbler: Skipping item with unsupported media type '{}' title='{}' uniqueid={}".format(
+                    media_type, self.display_title(), self.video_info.get("uniqueid", {})
+                ),
+                level=xbmc.LOGDEBUG,
+            )
             return None
 
         if not self.get_bool_setting("mediatype.{}".format(media_type), True):
@@ -266,6 +272,51 @@ class PlayerMonitor(xbmc.Player):
 
         return media_type
 
+    def apply_tmdb_helper_fallback(self):
+        if not self.video_info:
+            return
+
+        file_path = self.video_info.get("file") or ""
+        if not file_path.startswith("plugin://plugin.video.themoviedb.helper/"):
+            return
+
+        query = urllib.parse.urlsplit(file_path).query
+        params = {key: values[-1] for key, values in urllib.parse.parse_qs(query).items() if values}
+
+        tmdb_type = params.get("tmdb_type")
+        tmdb_id = params.get("tmdb_id")
+        if not tmdb_id:
+            return
+
+        if tmdb_type == "movie":
+            self.video_info["type"] = "movie"
+            self.video_info["uniqueid"] = {"tmdb": tmdb_id}
+            return
+
+        if tmdb_type != "tv":
+            return
+
+        season = params.get("season")
+        episode = params.get("episode")
+        if not season or not episode:
+            return
+
+        self.video_info["type"] = "episode"
+        self.video_info["season"] = int(season) if season.isdigit() else season
+        self.video_info["episode"] = int(episode) if episode.isdigit() else episode
+        self.video_info["tvshow"] = {"uniqueid": {"tmdb": tmdb_id}}
+
+    def display_title(self):
+        if not self.video_info:
+            return ""
+
+        return (
+            self.video_info.get("title")
+            or self.video_info.get("showtitle")
+            or self.video_info.get("label")
+            or ""
+        )
+
     def fetch_video_info(self):
         try:
             self.video_info = jsonrpc_request(
@@ -282,6 +333,7 @@ class PlayerMonitor(xbmc.Player):
                         "premiered",
                         "year",
                         "uniqueid",
+                        "file",
                     ],
                 },
             ).get("item")
@@ -292,6 +344,8 @@ class PlayerMonitor(xbmc.Player):
         if not self.video_info:
             xbmc.log("MDBList Scrobbler: No video info available, scrobbling disabled for this item", level=xbmc.LOGDEBUG)
             return
+
+        self.apply_tmdb_helper_fallback()
 
         media_type = self.video_info.get("type")
         inferred_media_type = self.infer_media_type(self.video_info)
@@ -309,8 +363,7 @@ class PlayerMonitor(xbmc.Player):
         uniqueid = self.video_info.get("uniqueid", {})
         xbmc.log(
             "MDBList Scrobbler: Detected item type={} id={} uniqueid={} title={}".format(
-                media_type, item_id, uniqueid,
-                self.video_info.get("title") or self.video_info.get("showtitle")
+                media_type, item_id, uniqueid, self.display_title()
             ),
             level=xbmc.LOGDEBUG,
         )
@@ -326,8 +379,9 @@ class PlayerMonitor(xbmc.Player):
                     xbmc.log("MDBList Scrobbler: Failed to fetch tvshow details - {}".format(e), level=xbmc.LOGWARNING)
                     self.video_info["tvshow"] = {}
             else:
-                xbmc.log("MDBList Scrobbler: tvshowid={}, skipping library lookup, will use episode uniqueid".format(tvshowid), level=xbmc.LOGDEBUG)
-                self.video_info["tvshow"] = {}
+                xbmc.log("MDBList Scrobbler: tvshowid={}, skipping library lookup, will use existing IDs".format(tvshowid), level=xbmc.LOGDEBUG)
+                if not self.video_info.get("tvshow"):
+                    self.video_info["tvshow"] = {}
 
     def start_interval_timer(self):
         self.interval_timer = Timer(self.get_int_setting("interval", 10), self.onInterval)
