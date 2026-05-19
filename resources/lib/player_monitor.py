@@ -1,3 +1,5 @@
+import time
+
 import requests
 import xbmc
 import xbmcaddon
@@ -8,7 +10,10 @@ from resources.lib.timer import Timer
 from resources.lib.utils import jsonrpc_request, fix_unique_ids
 
 
-REQUEST_TIMEOUT_SECONDS = 10
+REQUEST_TIMEOUT_SECONDS = 5
+REQUEST_RETRY_ATTEMPTS = 2
+REQUEST_RETRY_BACKOFF_SECONDS = 1
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 DEFAULT_BASE_URL = "https://api.mdblist.com"
 
 
@@ -175,28 +180,64 @@ class PlayerMonitor(xbmc.Player):
             url = "{}{}?apikey={}".format(DEFAULT_BASE_URL, endpoint, apikey)
             headers = None
 
-        try:
-            response = requests.post(url, json=json_data, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
-            if response.status_code >= 400:
-                response_snippet = response.text[:200]
+        response = self.post_scrobble_request(event, endpoint, url, json_data, headers)
+        if response is None:
+            return
+
+        if response.status_code >= 400:
+            response_snippet = response.text[:200]
+            xbmc.log(
+                "MDBList Scrobbler: API error {} on {} payload={} response={}".format(
+                    response.status_code, endpoint, json_data, response_snippet
+                ),
+                level=xbmc.LOGERROR,
+            )
+            return
+
+        xbmc.log("MDBList Scrobbler: Scrobbled '{}' to {} ({})".format(event, endpoint, response.status_code), level=xbmc.LOGDEBUG)
+
+    def post_scrobble_request(self, event: str, endpoint: str, url: str, json_data: dict, headers):
+        for attempt in range(1, REQUEST_RETRY_ATTEMPTS + 1):
+            try:
+                response = requests.post(url, json=json_data, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
+            except requests.exceptions.RequestException as exception:
+                if attempt < REQUEST_RETRY_ATTEMPTS:
+                    xbmc.log(
+                        "MDBList Scrobbler: Request failed on attempt {}/{} for '{}' - {}".format(
+                            attempt, REQUEST_RETRY_ATTEMPTS, event, str(exception)
+                        ),
+                        level=xbmc.LOGWARNING,
+                    )
+                    time.sleep(REQUEST_RETRY_BACKOFF_SECONDS * attempt)
+                    continue
+
                 xbmc.log(
-                    "MDBList Scrobbler: API error {} on {} payload={} response={}".format(
-                        response.status_code, endpoint, json_data, response_snippet
+                    "MDBList Scrobbler: Request failed after {} attempts for '{}' - {}".format(
+                        REQUEST_RETRY_ATTEMPTS, event, str(exception)
                     ),
+                    level=xbmc.LOGWARNING,
+                )
+                return None
+            except Exception as exception:
+                xbmc.log(
+                    "MDBList Scrobbler: Unexpected failure for '{}' - {}".format(event, str(exception)),
                     level=xbmc.LOGERROR,
                 )
-                self.show_message("API Error {}: {}".format(response.status_code, response.text[:50]))
-            else:
-                xbmc.log("MDBList Scrobbler: Scrobbled '{}' to {} ({})".format(event, endpoint, response.status_code), level=xbmc.LOGDEBUG)
-            response.raise_for_status()
-        except requests.exceptions.HTTPError:
-            pass  # Already logged above
-        except requests.exceptions.RequestException as exception:
-            xbmc.log("MDBList Scrobbler: Request failed - {}".format(str(exception)), level=xbmc.LOGERROR)
-            self.show_message("Request failed: {}".format(str(exception)[:50]))
-        except Exception as exception:
-            xbmc.log("MDBList Scrobbler: Unexpected failure - {}".format(str(exception)), level=xbmc.LOGERROR)
-            self.show_message("Request failed: {}".format(str(exception)[:50]))
+                return None
+
+            if response.status_code in RETRYABLE_STATUS_CODES and attempt < REQUEST_RETRY_ATTEMPTS:
+                xbmc.log(
+                    "MDBList Scrobbler: Retryable API error {} on {} attempt {}/{}".format(
+                        response.status_code, endpoint, attempt, REQUEST_RETRY_ATTEMPTS
+                    ),
+                    level=xbmc.LOGWARNING,
+                )
+                time.sleep(REQUEST_RETRY_BACKOFF_SECONDS * attempt)
+                continue
+
+            return response
+
+        return None
 
     def event_to_endpoint(self, event: str):
         if event in ["start", "resume", "seek", "interval"]:
