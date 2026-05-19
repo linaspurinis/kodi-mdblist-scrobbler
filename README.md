@@ -4,7 +4,31 @@ This addon for Kodi sends scrobble events for movies and episodes to the MDBList
 
 ## Installation
 
-Download this repository as a zip archive and install it in Kodi using "Install from zip file" in the add-on browser (Settings > Addons). NOTE requires "Enable Unknown Sources" to be enabled first.
+The recommended installation method is through the MDBList Kodi Repository, so Kodi can receive add-on updates automatically.
+
+1. In Kodi, enable **Unknown sources** under **Settings > System > Add-ons**.
+2. Open **Settings > File manager > Add source**.
+3. Add this source URL:
+
+   ```text
+   https://linaspurinis.github.io/repository.mdblist/
+   ```
+
+4. Name the source `MDBList`.
+5. Open **Add-ons > Install from zip file**.
+6. Select the `MDBList` source and install:
+
+   ```text
+   repository.mdblist-1.0.0.zip
+   ```
+
+7. Open **Add-ons > Install from repository > MDBList Kodi Repository** and install **MDBList Scrobbler**.
+
+You can also download the repository installer directly:
+
+```text
+https://linaspurinis.github.io/repository.mdblist/repository.mdblist-1.0.0.zip
+```
 
 After that, configure the MDBList API URL and API key in the addon settings.
 
