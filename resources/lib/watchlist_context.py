@@ -38,6 +38,32 @@ def selected_dbid():
         return None
 
 
+def selected_title(dbtype):
+    if dbtype == "episode":
+        return (
+            xbmc.getInfoLabel("ListItem.TVShowTitle")
+            or xbmc.getInfoLabel("ListItem.ShowTitle")
+            or xbmc.getInfoLabel("ListItem.Title")
+        )
+    return xbmc.getInfoLabel("ListItem.Title")
+
+
+def selected_infolabel_ids(media_type):
+    unique_ids = {}
+    for key, labels in (
+        ("imdbnumber", ("ListItem.IMDBNumber",)),
+        ("tmdb_id", ("ListItem.Property(tmdb_id)", "ListItem.Property(TmdbId)")),
+        ("tvdb_id", ("ListItem.Property(tvdb_id)", "ListItem.Property(TvdbId)")),
+    ):
+        for label in labels:
+            value = xbmc.getInfoLabel(label)
+            if value:
+                unique_ids[key] = value
+                break
+
+    return fix_unique_ids(unique_ids, media_type)
+
+
 def selected_item_ids():
     dbtype = selected_dbtype()
     dbid = selected_dbid()
@@ -68,6 +94,12 @@ def selected_item_ids():
                 {"tvshowid": tvshowid, "properties": ["title", "uniqueid"]},
             ).get("tvshowdetails", {})
             return "show", show.get("title") or episode.get("showtitle"), fix_unique_ids(show.get("uniqueid", {}), "show")
+
+    if dbtype in ("movie", "tvshow", "episode"):
+        mediatype = "movie" if dbtype == "movie" else "show"
+        ids = selected_infolabel_ids(mediatype)
+        if ids:
+            return mediatype, selected_title(dbtype), ids
 
     return None, None, {}
 

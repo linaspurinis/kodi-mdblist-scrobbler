@@ -449,7 +449,7 @@ class PlayerMonitor(xbmc.Player):
                 return False
             xbmc.log("MDBList Scrobbler: Item not in Kodi library, Kodi rating will be skipped but MDBList rating can proceed", level=xbmc.LOGDEBUG)
 
-        if self.get_bool_setting("rating.prompt.unrated_only", True):
+        if library_id not in (None, -1) and self.get_bool_setting("rating.prompt.unrated_only", True):
             media_type = self.video_info.get("type")
             try:
                 if media_type == "movie":
@@ -474,13 +474,18 @@ class PlayerMonitor(xbmc.Player):
             return False
 
         media_type = self.video_info.get("type")
+        library_id = self.video_info.get("id")
+
+        if library_id in (None, -1):
+            xbmc.log("MDBList Scrobbler: Skipping Kodi rating save, item is not in Kodi library", level=xbmc.LOGDEBUG)
+            return False
 
         if media_type == "movie":
             method = "VideoLibrary.SetMovieDetails"
-            params = {"movieid": self.video_info.get("id"), "userrating": rating}
+            params = {"movieid": library_id, "userrating": rating}
         elif media_type == "episode":
             method = "VideoLibrary.SetEpisodeDetails"
-            params = {"episodeid": self.video_info.get("id"), "userrating": rating}
+            params = {"episodeid": library_id, "userrating": rating}
         else:
             return False
 
