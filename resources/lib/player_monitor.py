@@ -75,7 +75,7 @@ class PlayerMonitor(xbmc.Player):
             )
             return default
 
-    def build_payload(self, event: str):
+    def build_payload(self, event: str, use_cached_time: bool = False):
         if not self.video_info:
             return None
 
@@ -94,8 +94,12 @@ class PlayerMonitor(xbmc.Player):
             xbmc.log("MDBList Scrobbler: Scrobbling disabled for media type '{}'".format(media_type), level=xbmc.LOGDEBUG)
             return None
 
-        total_time = self.getTotalTime() if self.isPlaying() else self.total_time
-        current_time = self.getTime() if self.isPlaying() else self.current_time
+        if use_cached_time:
+            total_time = self.total_time
+            current_time = self.current_time
+        else:
+            total_time = self.getTotalTime() if self.isPlaying() else self.total_time
+            current_time = self.getTime() if self.isPlaying() else self.current_time
 
         if total_time is not None:
             if total_time < 0:
@@ -158,12 +162,12 @@ class PlayerMonitor(xbmc.Player):
 
         return None
 
-    def send_request(self, event: str):
+    def send_request(self, event: str, use_cached_time: bool = False):
         if not self.get_bool_setting("event.{}".format(event), True):
             xbmc.log("MDBList Scrobbler: Event '{}' disabled in settings, skipping".format(event), level=xbmc.LOGDEBUG)
             return
 
-        json_data = self.build_payload(event)
+        json_data = self.build_payload(event, use_cached_time=use_cached_time)
         if not json_data:
             return
 
@@ -415,6 +419,29 @@ class PlayerMonitor(xbmc.Player):
 
         return round((current_time / int(self.total_time)) * 100, 2)
 
+    def finalize_previous_playback_on_transition(self):
+        if not self.video_info:
+            return
+
+        self.stop_interval_timer()
+        progress_percent = self.get_progress_percent()
+        if progress_percent is None or progress_percent <= 0:
+            xbmc.log(
+                "MDBList Scrobbler: Previous playback state found before new playback, but cached progress is unavailable or zero",
+                level=xbmc.LOGDEBUG,
+            )
+            return
+
+        xbmc.log(
+            "MDBList Scrobbler: Finalizing previous playback before new playback starts (progress={})".format(
+                progress_percent
+            ),
+            level=xbmc.LOGDEBUG,
+        )
+        self.send_request("stop", use_cached_time=True)
+        self.prompt_for_rating("stop")
+        self.video_info = {}
+
     def should_prompt_for_rating(self, playback_event: str):
         if self.rating_prompt_shown or not self.video_info:
             return False
@@ -578,6 +605,7 @@ class PlayerMonitor(xbmc.Player):
     def onAVStarted(self):
         xbmc.log("MDBList Scrobbler: onAVStarted", level=xbmc.LOGDEBUG)
         self.load_settings()
+        self.finalize_previous_playback_on_transition()
         self.reset_playback_state()
         self.fetch_video_info()
         self.update_time()
